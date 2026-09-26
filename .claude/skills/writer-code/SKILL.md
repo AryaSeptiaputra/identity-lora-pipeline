@@ -211,10 +211,31 @@ Komentar lain hanya untuk hal yang tidak terbaca dari kodenya, misalnya alasan s
 
 ### 2.11 Notebook
 
+**Peran dan nama**
 - Untuk eksplorasi. Kode yang dipakai ulang dipindah ke `app/`.
-- Notebook meng-import dari `app/`, tidak menyalin kode.
-- Nama diberi nomor urut: `01-lihat-data.ipynb`.
-- Sel markdown berisi judul tahap dan ringkasan percobaan.
+- Project yang punya `app/`: notebook meng-import dari `app/`, tidak menyalin kode. Project tanpa `app/` (mis. MVP satu notebook): kode fungsi ditulis di notebook dan diuji lewat `testbook`.
+- Nama `NN_nama_snake_case.ipynb`, nomor dua digit, nama berbahasa Inggris: `01_human_detection_and_cropping.ipynb`.
+- Error milik project ditulis di notebook sendiri bernomor `00`: `00_pipeline_errors.ipynb`. Notebook lain memuatnya dengan `%run "{PROJECT_ROOT / 'notebooks' / '00_pipeline_errors.ipynb'}"` di sel `## 3. Error pipeline`.
+
+**Susunan sel**
+1. Markdown judul `# NN — Judul` beserta ringkasan dan alur (tanpa kalimat pembuka atau penutup).
+2. `## 1. Import dan logger`, lalu `## 2. Konfigurasi` (konstanta path, ambang, `DISPLAY_LIMIT`), lalu `## 3. Error pipeline`.
+3. Satu tahap per proses, bernomor lanjut: `## 4. Deteksi manusia (K1)`. Tiap tahap terdiri dari **satu** markdown, satu atau lebih sel fungsi, lalu **satu sel runner**. Tidak ada markdown tambahan untuk runner, tidak ada `### Demo`.
+4. Tahap terakhir (orkestrasi) juga mengikuti pola ini; runner-nya menjalankan seluruh pipeline pada data nyata.
+
+**Sel definisi dan sel runner**
+- Sel fungsi bertag `definitions`; sel runner bertag `manual-run`. Test menjalankan notebook dengan `skip_cells_with_tag="manual-run"`, jadi runner tidak dieksekusi test.
+- Runner adalah "define -> demonstrate": memanggil fungsi tahap di atasnya pada data nyata. Komentar pembukanya menyebut apa yang dijalankan, apa yang dibutuhkan (data, koneksi), dan bahwa runner sengaja tidak dieksekusi test.
+- Variabel sementara runner berawalan `_runner_`. Runner boleh memakai hasil runner sebelumnya.
+- Data yang ditampilkan (cetakan, gambar, ringkasan) dibatasi `DISPLAY_LIMIT` data pertama (bawaan 5), memakai `islice` atau slicing. Yang dibatasi hanya tampilannya; pemrosesan tetap penuh.
+- Jangan menjalankan runner saat pemeriksaan kode kalau butuh data nyata atau unduhan model. Pemeriksaan lewat test dengan mock dan data sintetis.
+
+**Penulisan kode**
+- Gaya fungsional: fungsi kecil per proses, `@dataclass` untuk data, `Enum` untuk kategori hasil. Class lain hanya untuk error.
+- Fungsi publik diberi docstring `Args`/`Returns`/`Raises`; helper privat berawalan `_` tanpa docstring. Type hint opsional, tapi dipakai.
+- Path dihitung dari `PROJECT_ROOT` (dicari dengan naik dari `Path.cwd()` sampai ketemu folder `data/raw/`), bukan path relatif, karena kernel biasanya berjalan dari `notebooks/`.
+- Diagnosa lewat `logging`; `print()` hanya untuk keluaran runner yang dibaca pengguna.
+- Sel markdown berisi judul tahap, tanpa paragraf tambahan. Catatan tentang cara menjalankan ditulis sebagai komentar di sel runner.
 
 ### 2.12 Format keluaran kode
 

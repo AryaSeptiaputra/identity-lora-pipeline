@@ -13,7 +13,8 @@ dan `docs/keputusan-produk.md`.
 ```
 identity-lora-pipeline/
 ├── notebooks/
-│   └── 0_human_detection_and_cropping.ipynb   # config, deteksi, validasi, cropping,
+│   ├── 00_pipeline_errors.ipynb                # definisi error pipeline, dimuat 01 lewat %run
+│   └── 01_human_detection_and_cropping.ipynb   # config, deteksi, validasi, cropping,
 │                                                 orkestrasi — satu notebook (K6)
 ├── data/
 │   ├── raw/<identitas>/                        # foto asli per identitas, isi Anda
@@ -40,7 +41,10 @@ dijalankan (butuh koneksi internet sekali).
 ## Menjalankan pipeline
 
 1. Letakkan foto mentah tiap identitas di `data/raw/<nama-identitas>/`.
-2. Jalankan `notebooks/0_human_detection_and_cropping.ipynb` dari awal sampai akhir.
+2. Jalankan `notebooks/01_human_detection_and_cropping.ipynb` dari awal sampai akhir
+   (notebook `00_pipeline_errors.ipynb` dimuat otomatis, tidak perlu dijalankan sendiri).
+   Tiap bagian fungsi punya sel runner di bawahnya yang menampilkan `DISPLAY_LIMIT` (5)
+   data pertama.
 3. Hasil crop tersimpan di `data/cropped/<nama-identitas>/`, dengan nama file diturunkan
    dari nama file asal (`<nama_asli>_person.jpg`) — menjalankan ulang pipeline pada data
    yang sama akan menimpa file lama, bukan menduplikasi (K5).
@@ -59,8 +63,8 @@ pytest tests/
 ```
 
 Notebook diuji lewat `testbook` (menjalankan sel definisi notebook di kernel Jupyter
-sungguhan, tanpa memindah kodenya ke modul `.py`, sesuai keputusan K6). Sel yang memanggil
-model YOLOv8n sungguhan (`tag: manual-run`, sel terakhir) tidak dieksekusi oleh test —
+sungguhan, tanpa memindah kodenya ke modul `.py`, sesuai keputusan K6). Sel runner yang memanggil
+model YOLOv8n sungguhan (`tag: manual-run`) tidak dieksekusi oleh test —
 deteksi diuji dengan `ultralytics.YOLO` yang di-mock. Test tidak menjalankan pipeline
 pada data sungguhan; itu dilakukan Arya sendiri di luar test ini.
 
