@@ -1,0 +1,7 @@
+ultralytics==8.4.163
+opencv-python-headless==5.0.0.93
+numpy==2.5.3
+jupyter==1.1.1
+ipykernel==7.3.0
+pytest==9.1.1
+testbook==0.4.2
