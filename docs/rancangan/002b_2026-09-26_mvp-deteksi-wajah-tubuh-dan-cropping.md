@@ -1,0 +1,62 @@
+# 002b · MVP · Deteksi wajah, upper body, lower body dan cropping
+
+Status: usulan
+Dari: docs/rancangan/002a_2026-09-26_mvp-deteksi-wajah-tubuh-dan-cropping.md
+Kondisi kode: Project sudah ada (modul 001 selesai). `notebooks/00_pipeline_errors.ipynb`
+berisi error pipeline bersama; `notebooks/01_human_detection_and_cropping.ipynb` berisi
+deteksi manusia + cropping tubuh penuh, `data/raw/` → `data/cropped/`. Modul 002
+menambah notebook baru yang membaca `data/cropped/<identitas>/` (output modul 001) dan
+menulis ke tiga folder baru: `data/face/`, `data/upper_body/`, `data/lower_body/`.
+
+**Penyesuaian penamaan (bukan keputusan rancangan):** 002a menyebut notebook baru sebagai
+`1_face_upper_lower_detection_and_cropping.ipynb`. Konvensi notebook terbaru
+(`writer-code` §2.11, diterapkan Arya sendiri ke modul 001 — lihat rename
+`0_...` → `01_human_detection_and_cropping.ipynb` dan pemisahan error ke
+`00_pipeline_errors.ipynb`) mewajibkan nomor dua digit berurutan. Nama file yang
+dipakai di rencana ini: **`notebooks/02_face_upper_lower_body_detection_and_cropping.ipynb`**.
+Isi dan cakupannya tetap sama persis dengan K7–K16 di 002a; tidak ada keputusan produk
+yang berubah.
+
+## Peta keputusan → kode
+
+| Keputusan | Folder / file | Class / fungsi utama | Peran (writer-code) |
+|---|---|---|---|
+| K8, K9, K11 (error baru) | `notebooks/00_pipeline_errors.ipynb` — `## 1. Error pipeline` | `FaceDetectionError`, `NoFaceDetectedError`, `MultipleFaceDetectedError`, `PoseDetectionError`, `NoPersonPoseDetectedError`, `MultiplePersonPoseDetectedError`, `InsufficientKeypointsError` | Definisi error (2.6); reuse `ImageReadError`, `CropTooSmallError`, `CropSaveError` yang sudah ada, tidak didefinisikan ulang |
+| Config notebook 02 (K7, K13, K16) | `notebooks/02_...ipynb` — `## 2. Konfigurasi` | `PROJECT_ROOT`, `CROPPED_DIR` (input, K7), `FACE_DIR`, `UPPER_BODY_DIR`, `LOWER_BODY_DIR` (output, K13), `FACE_MODEL_NAME`, `FACE_DET_THRESH`, `POSE_MODEL_WEIGHTS`, `POSE_CONF_THRESHOLD`, `KEYPOINT_CONF_THRESHOLD`, `PADDING_RATIO`, `MIN_SIDE_PX`, `DISPLAY_LIMIT` | Config sel notebook (bukan `Settings`/`.env`, sama seperti K6 modul 001 — tidak ada kredensial) |
+| K8 Deteksi wajah | `notebooks/02_...ipynb` — `## 4. Deteksi wajah (K8)` | `load_face_analyzer(model_name, det_thresh) -> FaceAnalysis`, `detect_faces(analyzer, image) -> list[BoundingBox]`, `validate_single_face(boxes) -> BoundingBox` | `load_face_analyzer` pembentuk; `detect_faces` pengakses luar (bungkus `app.get`, raise `FaceDetectionError`); `validate_single_face` pemeriksa (raise `NoFaceDetectedError`/`MultipleFaceDetectedError`) |
+| K9 Deteksi pose | `notebooks/02_...ipynb` — `## 5. Deteksi pose (K9)` | `load_pose_detector(weights) -> YOLO`, `detect_pose(model, image_path, conf_threshold) -> list[np.ndarray]` (tiap elemen shape `(17, 3)`), `validate_single_person_pose(people) -> np.ndarray` | `load_pose_detector` pembentuk; `detect_pose` pengakses luar (raise `PoseDetectionError`); `validate_single_person_pose` pemeriksa (raise `NoPersonPoseDetectedError`/`MultiplePersonPoseDetectedError`) |
+| K10 Kelompok keypoint & bbox | `notebooks/02_...ipynb` — `## 6. Kelompok keypoint & bbox (K10, K11)` | `UPPER_KEYPOINT_INDICES`, `LOWER_KEYPOINT_INDICES`, `UPPER_ANCHOR_INDICES`, `LOWER_ANCHOR_INDICES` (konstanta); `_points_above_threshold(keypoints, indices, threshold) -> np.ndarray` | Konstanta config; `_points_above_threshold` sub-proses/pembantu |
+| K11 Keypoint tidak lengkap | sel yang sama dengan K10 | `derive_body_part_bbox(keypoints, indices, anchor_indices, conf_threshold) -> BoundingBox` | Proses gabungan pemeriksa+pengubah bentuk (raise `InsufficientKeypointsError`); dipanggil dua kali (upper, lower) dari orkestrasi |
+| K14 Cropping (reuse pola K3/K4) | `notebooks/02_...ipynb` — `## 7. Cropping (K14, K15)` | `BoundingBox` (dataclass, didefinisikan ulang lokal — lihat Risiko teknis), `_apply_padding`, `_is_large_enough`, `crop_with_padding(image, box, padding_ratio, min_side_px) -> np.ndarray`, `save_crop(region, output_path) -> None` | Sama peran dengan modul 001: `crop_with_padding` pengubah bentuk, `save_crop` pengakses luar |
+| K15 Re-run aman | sel yang sama dengan K14 | `build_crop_filename(source_path, suffix) -> str` → `<nama_asli>_<suffix>.jpg` | Pembantu |
+| K12 Cakupan independen per jenis | `notebooks/02_...ipynb` — `## 8. Orkestrasi per identitas (K12)` | `RegionOutcome` (Enum), `RegionSummary` (dataclass), `ProcessSummary` (dataclass dengan field `face`, `upper_body`, `lower_body: RegionSummary`), `process_image(image_path, face_analyzer, pose_model, ...) -> tuple[RegionOutcome, RegionOutcome, RegionOutcome]`, `process_identity(identity_dir, face_dir, upper_dir, lower_dir, ...) -> ProcessSummary`, `run_pipeline(identities) -> dict[str, ProcessSummary]` | `process_image` proses (tiga jenis independen, tiap jenis try/except sendiri); `process_identity`/`run_pipeline` proses, mengikuti pola `01` |
+
+## Langkah
+
+| # | Yang dibangun | File disentuh | Test | Gate (dari rencana-evaluasi) | Bergantung pada |
+|---|---|---|---|---|---|
+| 1 | Error pipeline baru untuk modul 002 (K8, K9, K11): tambah 7 error class ke `00_pipeline_errors.ipynb`. Pisahkan test error pipeline ke file tersendiri supaya tidak terikat ke notebook 01 saja (dipakai bersama 01 dan 02) | `notebooks/00_pipeline_errors.ipynb` (tambah 7 class); `tests/notebooks/test_pipeline_errors.py` (baru, pindahkan `test_errors_notebook_defines_all_pipeline_errors` dari test 01 + tambah 7 nama error baru); `tests/notebooks/test_human_detection_and_cropping.py` (hapus test yang dipindah) | `pytest tests/notebooks/test_pipeline_errors.py tests/notebooks/test_human_detection_and_cropping.py` — keduanya lulus | Tidak ada `docs/rencana-evaluasi.md` untuk rancangan ini (bukan fase Dev evaluasi model); gate cukup lulus test, sama seperti 001b | — (langkah pertama) |
+| 2 | Scaffolding project untuk modul 002 + skeleton notebook 02 + deteksi wajah (K7, K8): folder output baru dengan `.gitkeep`, dependency baru, sel 1–4 notebook 02 (Import&logger, Konfigurasi, Error pipeline via `%run`, Deteksi wajah) | Baru: `data/face/.gitkeep`, `data/upper_body/.gitkeep`, `data/lower_body/.gitkeep`, `notebooks/02_face_upper_lower_body_detection_and_cropping.ipynb`, `tests/notebooks/test_face_upper_lower_body_detection_and_cropping.py`. Edit: `.gitignore` (tambah `data/face/*`, `data/upper_body/*`, `data/lower_body/*` + pengecualian `.gitkeep`), `requirements.txt` (tambah `insightface`, `onnxruntime`, versi dikunci saat instalasi nyata) | `pytest tests/notebooks/test_face_upper_lower_body_detection_and_cropping.py` — `load_face_analyzer`/`detect_faces`/`validate_single_face` diuji dengan `FaceAnalysis` di-mock (tanpa mengunduh model `buffalo_sc` sungguhan): `detect_faces` menerjemahkan hasil mock ke `BoundingBox`; `validate_single_face` lolos pada 1 wajah, raise `NoFaceDetectedError`/`MultipleFaceDetectedError` pada 0/>1 | Sama seperti langkah 1 — cukup lulus test | Langkah 1 (error `FaceDetectionError` dkk. harus sudah ada) |
+| 3 | Deteksi pose & kelompok keypoint (K9, K10, K11): tambah sel 5–6 notebook 02 (Deteksi pose, Kelompok keypoint & bbox) | Edit: `notebooks/02_...ipynb` (tambah sel), `tests/notebooks/test_face_upper_lower_body_detection_and_cropping.py` (tambah test) | Tambahan test: `detect_pose`/`validate_single_person_pose` dengan `YOLO` di-mock (lolos 1 orang, raise `NoPersonPoseDetectedError`/`MultiplePersonPoseDetectedError` pada 0/>1 orang); `derive_body_part_bbox` dengan array keypoint sintetis `(17, 3)` mencakup: kedua anchor + ≥2 titik lolos → bbox terhitung benar dari min/max titik lolos; anchor tidak lolos ambang → `InsufficientKeypointsError`; anchor lolos tapi total <2 titik lolos → `InsufficientKeypointsError`, untuk grup upper dan lower masing-masing | Sama seperti langkah 1 | Langkah 2 (butuh `PoseDetectionError` dkk. dari langkah 1, dan sel Konfigurasi dari langkah 2) |
+| 4 | Cropping (reuse pola K3/K4 → K14, K15) & orkestrasi independen per jenis (K12, K13): tambah sel 7–8 notebook 02 (Cropping, Orkestrasi); perbarui `README.md` untuk urutan jalan 00→01→02, dependency baru, catatan lisensi `buffalo_sc` | Edit: `notebooks/02_...ipynb` (tambah sel), `tests/notebooks/test_face_upper_lower_body_detection_and_cropping.py` (tambah test), `README.md` | Tambahan test: `crop_with_padding`/`build_crop_filename` (perilaku sama dengan modul 001, sumber bbox berbeda, suffix `face`/`upper`/`lower`); `process_image` pada kombinasi mock (mis. wajah gagal tapi pose+keypoint berhasil, atau sebaliknya) menghasilkan crop untuk jenis yang berhasil saja, tanpa menggagalkan jenis lain (K12); `process_identity` pada folder sintetis: jumlah file per folder output benar, gambar bermasalah tercatat di `RegionSummary`, bukan dilempar sebagai error tak tertangani; re-run pada data sama menimpa `_face`/`_upper`/`_lower` yang sama, bukan menduplikasi (K15); satu test smoke seluruh notebook 02 end-to-end (`testbook`, `skip_cells_with_tag="manual-run"`) dengan mock+data sintetis | Sama seperti langkah 1 — D4 (validasi statis/impor, bukan pipeline pada data sungguhan) tetap berlaku untuk modul 002 | Langkah 3 (butuh deteksi wajah, pose, keypoint sudah ada) |
+
+## Tidak dibangun di rencana ini
+
+- Manifest/pencocokan triplet crop (face+upper+lower) per foto per identitas — didorong ke fase Dev (Ditunda, `docs/keputusan-produk.md`).
+- Kalibrasi ambang (`det_thresh`, `POSE_CONF_THRESHOLD`, `KEYPOINT_CONF_THRESHOLD`, `MIN_SIDE_PX`) pada data asli — dilakukan Arya sendiri, sama seperti modul 001.
+- Pengujian pipeline pada foto identitas sungguhan — di luar cakupan pekerjaan pink-chan (D3, D4); dilakukan Arya setelah Langkah 4 selesai, memakai sel runner (`tag: manual-run`) di notebook 02 pada `data/cropped/<identitas>/` miliknya.
+- Pemisahan kode notebook 02 ke modul `.py` — ditunda ke fase Dev untuk seluruh pipeline sekaligus (K16, konsisten K6 modul 001).
+- Penggantian model deteksi wajah dari `buffalo_sc` — ditolak eksplisit di titik periksa 6.
+
+## Risiko teknis
+
+- **Duplikasi kode antar notebook, disengaja.** Notebook 02 tidak meng-`%run` notebook 01 (hanya `00_pipeline_errors.ipynb` yang dimuat bersama, sesuai konvensi §2.11). Akibatnya `BoundingBox`, `_apply_padding`, `_is_large_enough`, `crop_with_padding`, `save_crop` didefinisikan ulang di notebook 02 — sama persis nilainya (`PADDING_RATIO=0.1`, `MIN_SIDE_PX=64`, sesuai K14) tapi kodenya bukan satu sumber. Diterima karena K16/K6 sengaja menahan setiap modul dalam satu notebook mandiri untuk fase MVP; pemisahan ke `app/shared/` baru dilakukan fase Dev (lihat "Tidak dibangun").
+- **Dependency baru (`insightface`, `onnxruntime`) belum pernah diinstal di project ini.** Versi persis dikunci (`==`) saat Langkah 2 benar-benar dijalankan (`pip install`), bukan ditebak di rencana ini — kalau versi tertentu gagal terinstal di lingkungan Arya (mis. konflik `numpy==2.5.3` yang sudah dipakai), pink-chan melaporkan dan menyesuaikan pin di langkah itu, bukan mengubah keputusan K8.
+- **`FaceAnalysis(name="buffalo_sc")` mengunduh bobot ke `~/.insightface/models/` saat pertama kali `app.prepare()` dipanggil** — sama seperti `yolov8n-pose.pt` di modul 001, ini hanya terjadi di sel runner (`manual-run`), tidak dieksekusi test.
+- **Confidence bbox hasil `derive_body_part_bbox`** (K10) tidak disebutkan eksplisit di 002a karena `BoundingBox.confidence` dirancang untuk deteksi langsung (K1, K8), bukan bbox turunan dari keypoint. Keputusan implementasi (bukan keputusan produk): isi dengan rata-rata confidence titik yang lolos ambang pada grup itu — nilai ini hanya dipakai untuk log/tampilan, tidak mempengaruhi validasi K11.
+- **`RegionOutcome`/`RegionSummary` adalah desain baru** (K12 hanya menetapkan *bahwa* tiga jenis independen, bukan bentuk struktur datanya) — nama pasti field boleh sedikit berubah saat coding, dicatat di laporan langkah, tanpa mengubah keputusan K12/K13.
+
+## Koreksi selama putaran
+
+- Nama notebook disesuaikan dari `1_face_upper_lower_detection_and_cropping.ipynb` (002a) menjadi `02_face_upper_lower_body_detection_and_cropping.ipynb`, mengikuti konvensi penomoran dua digit berurutan yang diterapkan Arya sendiri ke modul 001 setelah 002a ditulis. Bukan perubahan keputusan produk K7–K16; hanya penamaan file.
+- Error class baru (K8/K9/K11) ditulis di `notebooks/00_pipeline_errors.ipynb` (error pipeline terpusat), bukan didefinisikan ulang di notebook 02 — mengikuti konvensi §2.11 terbaru yang belum ada saat 002a ditulis.
