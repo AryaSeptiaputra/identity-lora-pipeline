@@ -14,8 +14,8 @@ Dipakai untuk project yang tujuannya mencari jawaban, bukan melayani pengguna: m
 ```
 project-name/
 ├── notebooks/              # eksplorasi, diberi nomor urut
-│   ├── 01-lihat-data.ipynb
-│   └── 02-uji-model-awal.ipynb
+│   ├── 01_explore_data.ipynb
+│   └── 02_baseline_model.ipynb
 ├── app/
 │   ├── shared/             # config, bentuk data, util
 │   ├── data/               # memuat dan menyiapkan data latih

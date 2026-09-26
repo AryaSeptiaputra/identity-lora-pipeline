@@ -1,8 +1,9 @@
-"""Test notebook `notebooks/0_human_detection_and_cropping.ipynb` (K1-K6).
+"""Test notebook `notebooks/01_human_detection_and_cropping.ipynb` (K1-K6) dan
+`notebooks/00_pipeline_errors.ipynb`.
 
 Notebook dijalankan lewat `testbook`, bukan diimpor sebagai modul `.py`, karena kode
 inti sengaja tetap satu notebook di fase MVP ini (K6). Sel bertag "manual-run" (yang
-memanggil model YOLOv8n sungguhan pada `data/raw/`, termasuk kedua sel demo
+memanggil model YOLOv8n sungguhan pada `data/raw/`, termasuk semua sel runner
 "define -> demonstrate") tidak dieksekusi di sini — sesuai D4, tanda berhasil MVP
 adalah notebook bisa dijalankan tanpa error, bukan pipeline pada data sungguhan.
 Deteksi diuji dengan `ultralytics.YOLO` atau fungsi `detect_humans` yang di-mock, tanpa
@@ -16,8 +17,16 @@ import numpy as np
 import pytest
 from testbook import testbook
 
-NOTEBOOK_PATH = str(
-    Path(__file__).resolve().parents[2] / "notebooks" / "0_human_detection_and_cropping.ipynb"
+NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
+NOTEBOOK_PATH = str(NOTEBOOKS_DIR / "01_human_detection_and_cropping.ipynb")
+ERRORS_NOTEBOOK_PATH = str(NOTEBOOKS_DIR / "00_pipeline_errors.ipynb")
+PIPELINE_ERROR_NAMES = (
+    "ImageReadError",
+    "DetectionError",
+    "NoDetectionError",
+    "MultipleDetectionError",
+    "CropTooSmallError",
+    "CropSaveError",
 )
 
 
@@ -27,6 +36,17 @@ def tb():
         NOTEBOOK_PATH, execute=True, timeout=120, skip_cells_with_tag="manual-run"
     ) as client:
         yield client
+
+
+def test_errors_notebook_defines_all_pipeline_errors() -> None:
+    with testbook(ERRORS_NOTEBOOK_PATH, execute=True, timeout=120) as client:
+        for name in PIPELINE_ERROR_NAMES:
+            client.ref(name)
+
+
+def test_notebook_loads_pipeline_errors_from_errors_notebook(tb) -> None:
+    for name in PIPELINE_ERROR_NAMES:
+        tb.ref(name)
 
 
 def test_notebook_defines_all_core_components(tb) -> None:
