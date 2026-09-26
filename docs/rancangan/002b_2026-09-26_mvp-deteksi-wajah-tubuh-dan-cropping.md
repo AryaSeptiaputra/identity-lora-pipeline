@@ -1,6 +1,6 @@
 # 002b · MVP · Deteksi wajah, upper body, lower body dan cropping
 
-Status: usulan
+Status: disetujui 2026-09-26
 Dari: docs/rancangan/002a_2026-09-26_mvp-deteksi-wajah-tubuh-dan-cropping.md
 Kondisi kode: Project sudah ada (modul 001 selesai). `notebooks/00_pipeline_errors.ipynb`
 berisi error pipeline bersama; `notebooks/01_human_detection_and_cropping.ipynb` berisi

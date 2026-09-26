@@ -19,7 +19,6 @@ from testbook import testbook
 
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 NOTEBOOK_PATH = str(NOTEBOOKS_DIR / "01_human_detection_and_cropping.ipynb")
-ERRORS_NOTEBOOK_PATH = str(NOTEBOOKS_DIR / "00_pipeline_errors.ipynb")
 PIPELINE_ERROR_NAMES = (
     "ImageReadError",
     "DetectionError",
@@ -36,12 +35,6 @@ def tb():
         NOTEBOOK_PATH, execute=True, timeout=120, skip_cells_with_tag="manual-run"
     ) as client:
         yield client
-
-
-def test_errors_notebook_defines_all_pipeline_errors() -> None:
-    with testbook(ERRORS_NOTEBOOK_PATH, execute=True, timeout=120) as client:
-        for name in PIPELINE_ERROR_NAMES:
-            client.ref(name)
 
 
 def test_notebook_loads_pipeline_errors_from_errors_notebook(tb) -> None:

@@ -6,6 +6,12 @@ data/raw/*
 !data/raw/.gitkeep
 data/cropped/*
 !data/cropped/.gitkeep
+data/face/*
+!data/face/.gitkeep
+data/upper_body/*
+!data/upper_body/.gitkeep
+data/lower_body/*
+!data/lower_body/.gitkeep
 
 # Bobot model — diunduh otomatis oleh ultralytics saat notebook dijalankan
 *.pt
