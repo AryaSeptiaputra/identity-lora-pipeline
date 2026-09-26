@@ -2,10 +2,11 @@
 
 Notebook dijalankan lewat `testbook`, bukan diimpor sebagai modul `.py`, karena kode
 inti sengaja tetap satu notebook di fase MVP ini (K6). Sel bertag "manual-run" (yang
-memanggil model YOLOv8n sungguhan pada `data/raw/`) tidak dieksekusi di sini — sesuai
-D4, tanda berhasil MVP adalah notebook bisa dijalankan tanpa error, bukan pipeline pada
-data sungguhan. Deteksi diuji dengan `ultralytics.YOLO` yang di-mock, tanpa mengunduh
-atau memanggil model sungguhan.
+memanggil model YOLOv8n sungguhan pada `data/raw/`, termasuk kedua sel demo
+"define -> demonstrate") tidak dieksekusi di sini — sesuai D4, tanda berhasil MVP
+adalah notebook bisa dijalankan tanpa error, bukan pipeline pada data sungguhan.
+Deteksi diuji dengan `ultralytics.YOLO` atau fungsi `detect_humans` yang di-mock, tanpa
+mengunduh atau memanggil model sungguhan.
 """
 
 from pathlib import Path
@@ -31,20 +32,24 @@ def tb():
 def test_notebook_defines_all_core_components(tb) -> None:
     for name in (
         "BoundingBox",
-        "HumanDetector",
+        "load_detector",
+        "detect_humans",
         "validate_single_detection",
         "NoDetectionError",
         "MultipleDetectionError",
-        "Cropper",
+        "crop_with_padding",
+        "save_crop",
         "CropTooSmallError",
         "build_crop_filename",
+        "ProcessSummary",
+        "total_skipped",
         "process_identity",
         "run_pipeline",
     ):
         tb.ref(name)
 
 
-def test_human_detector_translates_mocked_yolo_result_to_bounding_boxes(tb) -> None:
+def test_detect_humans_translates_mocked_yolo_result_to_bounding_boxes(tb) -> None:
     with tb.patch("__main__.YOLO"):
         tb.inject(
             """
@@ -55,10 +60,10 @@ def test_human_detector_translates_mocked_yolo_result_to_bounding_boxes(tb) -> N
             _fake_box.conf = [0.87]
             _fake_result = MagicMock(boxes=[_fake_box])
 
-            _detector = HumanDetector(weights="yolov8n.pt", conf_threshold=0.5)
-            _detector._model.predict.return_value = [_fake_result]
+            _model = load_detector("yolov8n.pt")
+            _model.predict.return_value = [_fake_result]
 
-            _boxes = _detector.detect(Path("dummy.jpg"))
+            _boxes = detect_humans(_model, Path("dummy.jpg"), conf_threshold=0.5)
             assert _boxes == [BoundingBox(x1=1, y1=2, x2=3, y2=4, confidence=0.87)]
             """
         )
@@ -86,19 +91,17 @@ def test_validate_single_detection_boundary_cases(tb) -> None:
     )
 
 
-def test_cropper_applies_padding_and_rejects_small_crop(tb) -> None:
+def test_crop_with_padding_applies_padding_and_rejects_small_crop(tb) -> None:
     tb.inject(
         """
         _image = np.zeros((100, 100, 3), dtype=np.uint8)
         _box = BoundingBox(x1=40, y1=40, x2=60, y2=60, confidence=0.9)
 
-        _cropper = Cropper(padding_ratio=0.5, min_side_px=30)
-        _region = _cropper.crop(_image, _box)
+        _region = crop_with_padding(_image, _box, padding_ratio=0.5, min_side_px=30)
         assert _region.shape[:2] == (40, 40)
 
-        _strict_cropper = Cropper(padding_ratio=0.5, min_side_px=50)
         try:
-            _strict_cropper.crop(_image, _box)
+            crop_with_padding(_image, _box, padding_ratio=0.5, min_side_px=50)
             assert False, "harus raise CropTooSmallError"
         except CropTooSmallError:
             pass
@@ -111,6 +114,21 @@ def test_build_crop_filename_derived_from_source_name(tb) -> None:
         """
         assert build_crop_filename(Path("foto1.jpg")) == "foto1_person.jpg"
         assert build_crop_filename(Path("/a/b/pink-chan.png")) == "pink-chan_person.jpg"
+        """
+    )
+
+
+def test_total_skipped_sums_all_skip_categories(tb) -> None:
+    tb.inject(
+        """
+        _summary = ProcessSummary(
+            cropped=5,
+            skipped_no_detection=1,
+            skipped_multiple_detection=2,
+            skipped_too_small=3,
+            skipped_unreadable=4,
+        )
+        assert total_skipped(_summary) == 10
         """
     )
 
@@ -131,12 +149,7 @@ def test_process_identity_skips_problematic_images_and_crops_valid_ones(
         _write_synthetic_image(identity_dir / name)
 
     code = """
-        class _FakeDetector:
-            def __init__(self, boxes_by_name):
-                self._boxes_by_name = boxes_by_name
-
-            def detect(self, image_path):
-                return self._boxes_by_name[Path(image_path).name]
+        import unittest.mock
 
         _boxes_by_name = {
             "valid.jpg": [BoundingBox(x1=10, y1=10, x2=90, y2=90, confidence=0.9)],
@@ -148,9 +161,13 @@ def test_process_identity_skips_problematic_images_and_crops_valid_ones(
             "too_small.jpg": [BoundingBox(x1=0, y1=0, x2=2, y2=2, confidence=0.9)],
         }
 
-        _summary = process_identity(
-            Path(IDENTITY_DIR), Path(OUTPUT_DIR), _FakeDetector(_boxes_by_name), Cropper(0.0, 10)
-        )
+        def _fake_detect_humans(model, image_path, conf_threshold):
+            return _boxes_by_name[Path(image_path).name]
+
+        with unittest.mock.patch("__main__.detect_humans", side_effect=_fake_detect_humans):
+            _summary = process_identity(
+                Path(IDENTITY_DIR), Path(OUTPUT_DIR), None, 0.5, 0.0, 10
+            )
 
         assert _summary.cropped == 1
         assert _summary.skipped_no_detection == 1
@@ -171,15 +188,14 @@ def test_rerun_on_same_data_overwrites_instead_of_duplicating(tb, tmp_path: Path
     _write_synthetic_image(identity_dir / "valid.jpg")
 
     code = """
-        class _FakeDetector:
-            def detect(self, image_path):
-                return [BoundingBox(x1=10, y1=10, x2=90, y2=90, confidence=0.9)]
+        import unittest.mock
 
-        _detector = _FakeDetector()
-        _cropper = Cropper(0.0, 10)
+        def _fake_detect_humans(model, image_path, conf_threshold):
+            return [BoundingBox(x1=10, y1=10, x2=90, y2=90, confidence=0.9)]
 
-        process_identity(Path(IDENTITY_DIR), Path(OUTPUT_DIR), _detector, _cropper)
-        process_identity(Path(IDENTITY_DIR), Path(OUTPUT_DIR), _detector, _cropper)
+        with unittest.mock.patch("__main__.detect_humans", side_effect=_fake_detect_humans):
+            process_identity(Path(IDENTITY_DIR), Path(OUTPUT_DIR), None, 0.5, 0.0, 10)
+            process_identity(Path(IDENTITY_DIR), Path(OUTPUT_DIR), None, 0.5, 0.0, 10)
 
         _output_files = list(Path(OUTPUT_DIR).iterdir())
         assert [p.name for p in _output_files] == ["valid_person.jpg"]

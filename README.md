@@ -13,8 +13,8 @@ dan `docs/keputusan-produk.md`.
 ```
 identity-lora-pipeline/
 ├── notebooks/
-│   └── 0_human_detection_and_cropping.ipynb   # config, HumanDetector, validasi,
-│                                                 Cropper, orkestrasi — satu notebook (K6)
+│   └── 0_human_detection_and_cropping.ipynb   # config, deteksi, validasi, cropping,
+│                                                 orkestrasi — satu notebook (K6)
 ├── data/
 │   ├── raw/<identitas>/                        # foto asli per identitas, isi Anda
 │   │                                             sendiri, tidak diubah oleh pipeline
