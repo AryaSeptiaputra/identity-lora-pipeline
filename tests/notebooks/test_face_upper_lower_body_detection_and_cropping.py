@@ -3,11 +3,14 @@
 
 Notebook dijalankan lewat `testbook`, bukan diimpor sebagai modul `.py`, karena kode
 inti sengaja tetap satu notebook per modul di fase MVP ini (K16, konsisten K6). Sel
-bertag "manual-run" (yang memanggil model InsightFace/YOLOv8n-pose sungguhan pada
+bertag "manual-run" (yang memanggil model InsightFace/DWPose sungguhan pada
 `data/cropped/`, termasuk semua sel runner "define -> demonstrate") tidak dieksekusi
 di sini — sesuai D4, tanda berhasil MVP adalah notebook bisa dijalankan tanpa error,
-bukan pipeline pada data sungguhan. Deteksi diuji dengan `FaceAnalysis`/`YOLO` yang
-di-mock, tanpa mengunduh atau memanggil model sungguhan.
+bukan pipeline pada data sungguhan. Deteksi diuji dengan `FaceAnalysis`/`Wholebody`
+(rtmlib) yang di-mock, tanpa mengunduh atau memanggil model sungguhan. K9 (revisi
+rancangan 003): `load_pose_detector` diuji dengan `onnxruntime.get_available_providers`
+di-mock, termasuk kasus GPU tidak tersedia (`GPUNotAvailableError`, gagal keras, tidak
+fallback CPU).
 """
 
 from pathlib import Path
@@ -27,6 +30,7 @@ PIPELINE_ERROR_NAMES = (
     "NoPersonPoseDetectedError",
     "MultiplePersonPoseDetectedError",
     "InsufficientKeypointsError",
+    "GPUNotAvailableError",
 )
 
 
@@ -109,25 +113,57 @@ def test_notebook_defines_pose_and_keypoint_components(tb) -> None:
         tb.ref(name)
 
 
-def test_detect_pose_translates_mocked_yolo_result_to_keypoint_arrays(tb) -> None:
-    with tb.patch("__main__.YOLO"):
+def test_load_pose_detector_raises_when_cuda_not_available(tb) -> None:
+    # K9 (revisi rancangan 003): GPU wajib, tidak fallback CPU (koreksi Arya,
+    # titik periksa 10) — verifikasi eksplisit sebelum memuat model.
+    with tb.patch("__main__.ort.get_available_providers", return_value=["CPUExecutionProvider"]):
         tb.inject(
             """
-            from unittest.mock import MagicMock
-            import numpy as np
-
-            _fake_keypoints_tensor = MagicMock()
-            _fake_keypoints_tensor.data.cpu.return_value.numpy.return_value = np.zeros((1, 17, 3))
-            _fake_result = MagicMock(keypoints=_fake_keypoints_tensor)
-
-            _model = load_pose_detector("yolov8n-pose.pt")
-            _model.predict.return_value = [_fake_result]
-
-            _people = detect_pose(_model, Path("dummy.jpg"), conf_threshold=0.5)
-            assert len(_people) == 1
-            assert _people[0].shape == (17, 3)
+            try:
+                load_pose_detector("balanced", "cuda")
+                assert False, "harus raise GPUNotAvailableError"
+            except GPUNotAvailableError:
+                pass
             """
         )
+
+
+def test_load_pose_detector_constructs_wholebody_when_cuda_available(tb) -> None:
+    with (
+        tb.patch(
+            "__main__.ort.get_available_providers",
+            return_value=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        ),
+        tb.patch("__main__.Wholebody"),
+    ):
+        tb.inject(
+            """
+            _model = load_pose_detector("balanced", "cuda")
+            Wholebody.assert_called_once_with(mode="balanced", backend="onnxruntime", device="cuda")
+            assert _model is Wholebody.return_value
+            """
+        )
+
+
+def test_detect_pose_translates_mocked_wholebody_result_to_keypoint_arrays(tb) -> None:
+    tb.inject(
+        """
+        from unittest.mock import MagicMock
+        import numpy as np
+
+        _fake_keypoints = np.zeros((1, 133, 2))
+        _fake_scores = np.zeros((1, 133))
+        _fake_keypoints[0, 5] = (10.0, 20.0)
+        _fake_scores[0, 5] = 0.9
+
+        _model = MagicMock(return_value=(_fake_keypoints, _fake_scores))
+
+        _people = detect_pose(_model, np.zeros((10, 10, 3), dtype=np.uint8))
+        assert len(_people) == 1
+        assert _people[0].shape == (17, 3)
+        assert tuple(_people[0][5]) == (10.0, 20.0, 0.9)
+        """
+    )
 
 
 def test_validate_single_person_pose_boundary_cases(tb) -> None:
@@ -299,7 +335,7 @@ def test_process_image_treats_face_and_body_parts_independently(tb, tmp_path: Pa
         ):
             _face, _upper, _lower = process_image(
                 Path(IMG_OK_PATH), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
         assert _face == RegionOutcome.CROPPED
         assert _upper == RegionOutcome.SKIPPED_NO_DETECTION
@@ -314,7 +350,7 @@ def test_process_image_treats_face_and_body_parts_independently(tb, tmp_path: Pa
         ):
             _face, _upper, _lower = process_image(
                 Path(IMG_OK_PATH), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
         assert _face == RegionOutcome.SKIPPED_NO_DETECTION
         assert _upper == RegionOutcome.CROPPED
@@ -328,7 +364,7 @@ def test_process_image_treats_face_and_body_parts_independently(tb, tmp_path: Pa
         ):
             _face, _upper, _lower = process_image(
                 Path(IMG_OK_PATH), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
         assert _face == RegionOutcome.CROPPED
         assert _upper == RegionOutcome.CROPPED
@@ -337,7 +373,7 @@ def test_process_image_treats_face_and_body_parts_independently(tb, tmp_path: Pa
         # Kasus 4: gambar tidak bisa dibaca -> ketiga jenis dilewati.
         _face, _upper, _lower = process_image(
             Path(IMG_BAD_PATH), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-            None, None, 0.0, 10, 0.5, 0.5,
+            None, None, 0.0, 10, 0.5,
         )
         assert _face == RegionOutcome.SKIPPED_UNREADABLE
         assert _upper == RegionOutcome.SKIPPED_UNREADABLE
@@ -378,18 +414,17 @@ def test_process_identity_creates_output_dirs_and_aggregates_region_summaries(
         def _fake_detect_faces(analyzer, image):
             return [BoundingBox(x1=10, y1=10, x2=90, y2=90, confidence=0.9)]
 
-        def _fake_detect_pose(model, image_path, conf_threshold):
-            if Path(image_path).name == "valid.jpg":
-                return [_valid_keypoints]
-            return []
-
+        # _list_images mengurutkan berkas secara alfabetis, jadi "no_detection.jpg"
+        # dipanggil lebih dulu ([]), lalu "valid.jpg" ([_valid_keypoints]). detect_pose
+        # (K9 revisi) tidak lagi menerima path (hanya image array), jadi dibedakan lewat
+        # urutan panggilan, bukan nama berkas.
         with (
             unittest.mock.patch("__main__.detect_faces", side_effect=_fake_detect_faces),
-            unittest.mock.patch("__main__.detect_pose", side_effect=_fake_detect_pose),
+            unittest.mock.patch("__main__.detect_pose", side_effect=[[], [_valid_keypoints]]),
         ):
             _summary = process_identity(
                 Path(IDENTITY_DIR), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
 
         assert Path(FACE_DIR).is_dir() and Path(UPPER_DIR).is_dir() and Path(LOWER_DIR).is_dir()
@@ -442,11 +477,11 @@ def test_rerun_on_same_data_overwrites_instead_of_duplicating(tb, tmp_path: Path
         ):
             process_identity(
                 Path(IDENTITY_DIR), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
             process_identity(
                 Path(IDENTITY_DIR), Path(FACE_DIR), Path(UPPER_DIR), Path(LOWER_DIR),
-                None, None, 0.0, 10, 0.5, 0.5,
+                None, None, 0.0, 10, 0.5,
             )
 
         assert [p.name for p in Path(FACE_DIR).iterdir()] == ["valid_face.jpg"]

@@ -24,6 +24,7 @@ PIPELINE_ERROR_NAMES = (
     "NoPersonPoseDetectedError",
     "MultiplePersonPoseDetectedError",
     "InsufficientKeypointsError",
+    "GPUNotAvailableError",
 )
 
 

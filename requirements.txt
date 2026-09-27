@@ -5,6 +5,7 @@ matplotlib==3.11.2
 jupyter==1.1.1
 ipykernel==7.3.0
 insightface==2.0
-onnxruntime==1.30.0
+onnxruntime-gpu==1.30.0
+rtmlib==0.0.16
 pytest==9.1.1
 testbook==0.4.2

@@ -1,6 +1,6 @@
 # 003b · MVP · Revisi deteksi pose ke DWPose (rtmlib) dengan GPU wajib
 
-Status: usulan
+Status: disetujui 2026-09-27
 Dari: docs/rancangan/003a_2026-09-26_mvp-revisi-dwpose-gpu.md
 Kondisi kode: Project sudah ada (modul 001 dan 002 selesai, 001b/002b keduanya
 `selesai`). `notebooks/00_pipeline_errors.ipynb` berisi error pipeline bersama, dimuat
