@@ -82,7 +82,7 @@ def test_detect_humans_translates_mocked_yolo_result_to_bounding_boxes(tb) -> No
         )
 
 
-def test_validate_single_detection_boundary_cases(tb) -> None:
+def test_validate_single_detection_selects_highest_confidence(tb) -> None:
     tb.inject(
         """
         _one = [BoundingBox(x1=0, y1=0, x2=10, y2=10, confidence=0.9)]
@@ -94,12 +94,11 @@ def test_validate_single_detection_boundary_cases(tb) -> None:
         except NoDetectionError:
             pass
 
-        _two = _one + [BoundingBox(x1=20, y1=20, x2=30, y2=30, confidence=0.8)]
-        try:
-            validate_single_detection(_two)
-            assert False, "harus raise MultipleDetectionError"
-        except MultipleDetectionError:
-            pass
+        _lower_confidence = BoundingBox(x1=20, y1=20, x2=30, y2=30, confidence=0.8)
+        assert validate_single_detection(_one + [_lower_confidence]) is _one[0]
+
+        _higher_confidence = BoundingBox(x1=30, y1=30, x2=40, y2=40, confidence=0.95)
+        assert validate_single_detection(_one + [_higher_confidence]) is _higher_confidence
         """
     )
 
@@ -168,8 +167,8 @@ def test_process_identity_skips_problematic_images_and_crops_valid_ones(
             "valid.jpg": [BoundingBox(x1=10, y1=10, x2=90, y2=90, confidence=0.9)],
             "no_person.jpg": [],
             "two_person.jpg": [
-                BoundingBox(x1=0, y1=0, x2=10, y2=10, confidence=0.9),
-                BoundingBox(x1=20, y1=20, x2=30, y2=30, confidence=0.9),
+                BoundingBox(x1=0, y1=0, x2=10, y2=10, confidence=0.8),
+                BoundingBox(x1=20, y1=20, x2=90, y2=90, confidence=0.95),
             ],
             "too_small.jpg": [BoundingBox(x1=0, y1=0, x2=2, y2=2, confidence=0.9)],
         }
@@ -182,11 +181,13 @@ def test_process_identity_skips_problematic_images_and_crops_valid_ones(
                 Path(IDENTITY_DIR), Path(OUTPUT_DIR), None, 0.5, 0.0, 10
             )
 
-        assert _summary.cropped == 1
+        assert _summary.cropped == 2
         assert _summary.skipped_no_detection == 1
-        assert _summary.skipped_multiple_detection == 1
         assert _summary.skipped_too_small == 1
-        assert sorted(p.name for p in Path(OUTPUT_DIR).iterdir()) == ["valid_person.jpg"]
+        assert sorted(p.name for p in Path(OUTPUT_DIR).iterdir()) == [
+            "two_person_person.jpg",
+            "valid_person.jpg",
+        ]
     """
     code = code.replace("IDENTITY_DIR", repr(str(identity_dir))).replace(
         "OUTPUT_DIR", repr(str(output_dir))

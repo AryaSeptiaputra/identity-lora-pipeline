@@ -77,7 +77,7 @@ def test_detect_faces_translates_mocked_face_analysis_result_to_bounding_boxes(t
         )
 
 
-def test_validate_single_face_boundary_cases(tb) -> None:
+def test_validate_single_face_selects_highest_confidence(tb) -> None:
     tb.inject(
         """
         _one = [BoundingBox(x1=0, y1=0, x2=10, y2=10, confidence=0.9)]
@@ -89,12 +89,11 @@ def test_validate_single_face_boundary_cases(tb) -> None:
         except NoFaceDetectedError:
             pass
 
-        _two = _one + [BoundingBox(x1=20, y1=20, x2=30, y2=30, confidence=0.8)]
-        try:
-            validate_single_face(_two)
-            assert False, "harus raise MultipleFaceDetectedError"
-        except MultipleFaceDetectedError:
-            pass
+        _lower_confidence = BoundingBox(x1=20, y1=20, x2=30, y2=30, confidence=0.8)
+        assert validate_single_face(_one + [_lower_confidence]) is _one[0]
+
+        _higher_confidence = BoundingBox(x1=30, y1=30, x2=40, y2=40, confidence=0.95)
+        assert validate_single_face(_one + [_higher_confidence]) is _higher_confidence
         """
     )
 
