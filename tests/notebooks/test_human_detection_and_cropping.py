@@ -136,11 +136,10 @@ def test_total_skipped_sums_all_skip_categories(tb) -> None:
         _summary = ProcessSummary(
             cropped=5,
             skipped_no_detection=1,
-            skipped_multiple_detection=2,
             skipped_too_small=3,
             skipped_unreadable=4,
         )
-        assert total_skipped(_summary) == 10
+        assert total_skipped(_summary) == 8
         """
     )
 
