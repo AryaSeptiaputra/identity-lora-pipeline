@@ -1,8 +1,8 @@
 """Test `notebooks/00_pipeline_errors.ipynb`.
 
-Notebook ini dimuat lewat `%run` oleh `01_human_detection_and_cropping.ipynb` dan
-`02_face_upper_lower_body_detection_and_cropping.ipynb`, jadi didefinisikan dan diuji
-terpisah dari kedua notebook itu.
+Notebook ini dimuat lewat `%run` oleh `01_human_detection_and_cropping.ipynb`,
+`02_face_detection_and_cropping.ipynb`, dan `03_image_captioning.ipynb`, jadi
+didefinisikan dan diuji terpisah dari ketiga notebook itu.
 """
 
 from pathlib import Path
@@ -25,6 +25,7 @@ PIPELINE_ERROR_NAMES = (
     "MultiplePersonPoseDetectedError",
     "InsufficientKeypointsError",
     "GPUNotAvailableError",
+    "CaptionGenerationError",
 )
 
 
