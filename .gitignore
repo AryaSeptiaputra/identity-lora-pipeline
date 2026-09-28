@@ -1,5 +1,6 @@
 # Virtual environment
 .venv/
+.venv-test/
 
 # Data — isinya disediakan Arya, hanya struktur folder yang dijaga lewat .gitkeep
 data/raw/*
