@@ -20,6 +20,7 @@ NOTEBOOK_PATH = str(NOTEBOOKS_DIR / "03_image_captioning.ipynb")
 PIPELINE_ERROR_NAMES = (
     "ImageReadError",
     "CaptionGenerationError",
+    "GPUNotAvailableError",
 )
 
 
@@ -39,6 +40,7 @@ def test_notebook_loads_pipeline_errors_from_errors_notebook(tb) -> None:
 def test_notebook_defines_all_core_components(tb) -> None:
     for name in (
         "ImageCaption",
+        "_verify_gpu_available",
         "load_vlm_model",
         "generate_caption",
         "generate_captions",
@@ -49,6 +51,58 @@ def test_notebook_defines_all_core_components(tb) -> None:
         "run_captioning",
     ):
         tb.ref(name)
+
+
+def test_load_vlm_model_raises_gpu_not_available_error_when_cuda_missing(tb) -> None:
+    code = """
+        _original_is_available = torch.cuda.is_available
+        torch.cuda.is_available = lambda: False
+        try:
+            try:
+                load_vlm_model()
+                assert False, "harus raise GPUNotAvailableError"
+            except GPUNotAvailableError:
+                pass
+        finally:
+            torch.cuda.is_available = _original_is_available
+    """
+    tb.inject(code)
+
+
+def test_load_vlm_model_verifies_gpu_before_loading_model_when_cuda_available(tb) -> None:
+    code = """
+        _call_order = []
+        _original_is_available = torch.cuda.is_available
+        _original_processor_from_pretrained = AutoProcessor.from_pretrained
+        _original_model_from_pretrained = LlavaForConditionalGeneration.from_pretrained
+
+        def _fake_is_available():
+            _call_order.append("is_available")
+            return True
+
+        def _fake_processor_from_pretrained(cls, *args, **kwargs):
+            _call_order.append("processor")
+            return "fake-processor"
+
+        def _fake_model_from_pretrained(cls, *args, **kwargs):
+            _call_order.append("model")
+            return "fake-model"
+
+        torch.cuda.is_available = _fake_is_available
+        AutoProcessor.from_pretrained = classmethod(_fake_processor_from_pretrained)
+        LlavaForConditionalGeneration.from_pretrained = classmethod(_fake_model_from_pretrained)
+        try:
+            _processor, _model = load_vlm_model()
+            assert _processor == "fake-processor"
+            assert _model == "fake-model"
+            assert _call_order[0] == "is_available"
+            assert "processor" in _call_order and "model" in _call_order
+        finally:
+            torch.cuda.is_available = _original_is_available
+            AutoProcessor.from_pretrained = _original_processor_from_pretrained
+            LlavaForConditionalGeneration.from_pretrained = _original_model_from_pretrained
+    """
+    tb.inject(code)
 
 
 def _write_synthetic_image(path: Path) -> None:
